@@ -4,6 +4,16 @@ pragma circom 2.0.0;
 /////////////////////// Templates from the circomlib ////////////////////////////////
 ////////////////// Copy-pasted here for easy reference //////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
+function log_ceil(n) {
+   var n_temp = n;
+   for (var i = 0; i < 254; i++) {
+       if (n_temp == 0) {
+          return i;
+       }
+       n_temp = n_temp \ 2;
+   }
+   return 254;
+}
 
 /*
  * Outputs `a` AND `b`
@@ -136,6 +146,45 @@ template LessThan(n) {
     out <== 1-n2b.bits[n];
 }
 
+// N is the number of bits the input  have.
+// The MSF is the sign bit.
+template LessEqThan(n) {
+    signal input in[2];
+    signal output out;
+
+    component lt = LessThan(n);
+
+    lt.in[0] <== in[0];
+    lt.in[1] <== in[1]+1;
+    lt.out ==> out;
+}
+
+// N is the number of bits the input  have.
+// The MSF is the sign bit.
+template GreaterThan(n) {
+    signal input in[2];
+    signal output out;
+
+    component lt = LessThan(n);
+
+    lt.in[0] <== in[1];
+    lt.in[1] <== in[0];
+    lt.out ==> out;
+}
+
+// N is the number of bits the input  have.
+// The MSF is the sign bit.
+template GreaterEqThan(n) {
+    signal input in[2];
+    signal output out;
+
+    component lt = LessThan(n);
+
+    lt.in[0] <== in[1];
+    lt.in[1] <== in[0]+1;
+    lt.out ==> out;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////// Templates for this lab ////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
@@ -149,6 +198,21 @@ template CheckBitLength(b) {
     signal output out;
 
     // TODO
+    signal bits[b];
+
+    for (var i = 0; i < b; i++) {
+        bits[i] <-- (in >> i) & 1;
+        bits[i] * (1-bits[i]) === 0;
+    }
+    var sum = 0;
+    for (var i = 0; i < b; i++) {
+        sum += (2**i) * bits[i];
+    }
+
+    component eq_check = IsEqual();
+    eq_check.in[0] <== sum;
+    eq_check.in[1] <== in;
+    out <== eq_check.out;
 }
 
 /*
@@ -198,6 +262,16 @@ template RightShift(b, shift) {
     signal output y;
 
     // TODO
+    component check_length = CheckBitLength(b);
+    check_length.in <== x;
+    check_length.out === 1;
+    
+    signal rem <-- x % (1 << shift);
+    // component num2bits = Num2Bits(shift);
+    // num2bits.in <== rem;
+
+    y <-- (x - rem) / (1 << shift);
+    x === y * (1 << shift) + rem;
 }
 
 /*
@@ -260,6 +334,32 @@ template LeftShift(shift_bound) {
     signal output y;
 
     // TODO
+    //component geq = GreaterEqThan(25);
+    // component lt = LessThan(shift_bound);
+    // // geq.in[0] <== 0;
+    // // geq.in[1] <== shift;
+    // lt.in[0] <== shift;
+    // lt.in[1] <== shift_bound;
+    // //geq.out === 1;
+
+    // (1-skip_checks)*(1-lt.out)===0;
+    // signal interm <-- x * (2**shift);
+    // y <== interm;
+    signal pow2shift_bits[shift_bound];
+    for (var i = 0; i < shift_bound; i++) {
+        if (i == shift){
+            pow2shift_bits[i] <-- 1;
+        } else {
+            pow2shift_bits[i] <-- 0;
+        }
+    }
+    component b2n = Bits2Num(shift_bound);
+    b2n.bits <== pow2shift_bits;
+    y <== x*b2n.out;
+
+    // signal interm <-- x * (2**shift);
+    // y*interm**-1 === 1;
+
 }
 
 /*

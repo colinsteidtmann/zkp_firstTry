@@ -1,4 +1,4 @@
-import random
+import random 
 
 ''' Enforces the well-formedness of an exponent-mantissa pair (e, m)
     if `e` is zero, then `m` must be zero
