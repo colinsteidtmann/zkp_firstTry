@@ -4,7 +4,7 @@
   "description": "Lab exercises for the ZKP course",
   "scripts": {
     "test": "mocha test",
-    "test_current": "mocha test/left_shift.js"
+    "test_current": "mocha test/float_add.js"
   },
   "directories": {
     "test": "test"

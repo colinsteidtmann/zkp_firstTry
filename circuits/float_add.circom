@@ -196,23 +196,20 @@ template CheckBitLength(b) {
     assert(b < 254);
     signal input in;
     signal output out;
-
-    // TODO
+    
     signal bits[b];
-
+    var sum;
     for (var i = 0; i < b; i++) {
-        bits[i] <-- (in >> i) & 1;
-        bits[i] * (1-bits[i]) === 0;
+        bits[i] <-- (in>>i) & 1;
+        bits[i]*(1-bits[i]) === 0;
+        sum += (2**i)*bits[i];
     }
-    var sum = 0;
-    for (var i = 0; i < b; i++) {
-        sum += (2**i) * bits[i];
-    }
+    component isEq = IsEqual();
+    isEq.in[0] <== sum;
+    isEq.in[1] <== in;
+    isEq.out ==> out;
 
-    component eq_check = IsEqual();
-    eq_check.in[0] <== sum;
-    eq_check.in[1] <== in;
-    out <== eq_check.out;
+
 }
 
 /*
@@ -261,17 +258,16 @@ template RightShift(b, shift) {
     signal input x;
     signal output y;
 
-    // TODO
-    component check_length = CheckBitLength(b);
-    check_length.in <== x;
-    check_length.out === 1;
-    
-    signal rem <-- x % (1 << shift);
-    // component num2bits = Num2Bits(shift);
-    // num2bits.in <== rem;
-
-    y <-- (x - rem) / (1 << shift);
-    x === y * (1 << shift) + rem;
+    component n2b = Num2Bits(b);
+    n2b.in <== x;
+    signal x_bits[b] <== n2b.bits;
+    signal y_bits[b-shift];
+    for (var i = 0; i < b-shift; i++) {
+        y_bits[i] <== x_bits[shift+i];
+    }
+    component b2n = Bits2Num(b-shift);
+    b2n.bits <== y_bits;
+    y <== b2n.out;
 }
 
 /*
@@ -333,32 +329,17 @@ template LeftShift(shift_bound) {
     signal input skip_checks;
     signal output y;
 
-    // TODO
-    //component geq = GreaterEqThan(25);
-    // component lt = LessThan(shift_bound);
-    // // geq.in[0] <== 0;
-    // // geq.in[1] <== shift;
-    // lt.in[0] <== shift;
-    // lt.in[1] <== shift_bound;
-    // //geq.out === 1;
-
-    // (1-skip_checks)*(1-lt.out)===0;
-    // signal interm <-- x * (2**shift);
-    // y <== interm;
-    signal pow2shift_bits[shift_bound];
+    signal pow2[shift_bound];
+    var sumBits = 0;
     for (var i = 0; i < shift_bound; i++) {
-        if (i == shift){
-            pow2shift_bits[i] <-- 1;
-        } else {
-            pow2shift_bits[i] <-- 0;
-        }
+        pow2[i] <-- (i==shift) ? 1:0;
+        pow2[i]*(1-pow2[i])===0;
+        sumBits += pow2[i];
     }
+    (sumBits-1)*(1-skip_checks) === 0;
     component b2n = Bits2Num(shift_bound);
-    b2n.bits <== pow2shift_bits;
+    b2n.bits <== pow2;
     y <== x*b2n.out;
-
-    // signal interm <-- x * (2**shift);
-    // y*interm**-1 === 1;
 
 }
 
@@ -370,11 +351,44 @@ template LeftShift(shift_bound) {
  * If `skip_checks` = 1, then we don't care about the output and the non-zero constraint is not enforced.
  */
 template MSNZB(b) {
-    signal input in;
+    signal input in; //nonzero value of b bits
     signal input skip_checks;
     signal output one_hot[b];
 
-    // TODO
+    component isZ = IsZero();
+    isZ.in <== in;
+    isZ.out*(1-skip_checks) === 0;
+
+    var msnzb;
+    for (var i = 0; i < b; i++) {
+        if (((in >> i) & 1) == 1) {
+            msnzb = i;
+        }
+    }
+    var sumBits;
+    for (var i = 0; i < b; i++) {
+        one_hot[i] <-- (msnzb == i) ? 1 : 0;
+        one_hot[i]*(1-one_hot[i]) === 0;
+        sumBits += one_hot[i];
+    }
+    (sumBits-1)*(1-skip_checks) === 0;
+
+   var lValue;
+   var gValue;
+   for (var i = 0; i < b; i++) {
+    lValue += one_hot[i] * (1<<i);
+    gValue += one_hot[i] * (1<<(i+1));
+   }
+   component lt = LessThan(b);
+   lt.in[0]<==lValue-1;
+   lt.in[1]<==in;
+   (1-lt.out)*(1-skip_checks)===0;
+   component lt2 = LessThan(b);
+   lt2.in[0]<==in;
+   lt2.in[1]<==gValue;
+   (1-lt2.out)*(1-skip_checks)===0;
+
+    
 }
 
 /*
@@ -385,14 +399,28 @@ template MSNZB(b) {
  * If `skip_checks` = 1, then we don't care about the output and the non-zero constraint is not enforced.
  */
 template Normalize(k, p, P) {
-    signal input e;
-    signal input m;
+    signal input e; // k bit exponent
+    signal input m; // P+1 bit unnormalized mantissa with precision p
     signal input skip_checks;
     signal output e_out;
     signal output m_out;
     assert(P > p);
 
-    // TODO
+    component msnzb = MSNZB(P+1);
+    msnzb.in <== m;
+    msnzb.skip_checks <== skip_checks;
+    
+    var msnzbIdx, msnzbVal;
+    for (var i = 0; i < P+1; i++) {
+        msnzbIdx += msnzb.one_hot[i]*i;
+        msnzbVal += msnzb.one_hot[i]*(1 << (P-i));
+    }
+    m_out <== m*msnzbVal;
+    e_out <== e + msnzbIdx - p;
+
+    
+
+    
 }
 
 /*
@@ -402,11 +430,79 @@ template Normalize(k, p, P) {
  * The output is a normalized floating-point number with exponent `e_out` and mantissa `m_out` of `p`+1-bits and scale `p`.
  * Enforces that inputs are well-formed.
  */
+
+//  template CheckWellFormedness(k, p) {
+//     signal input e;
+//     signal input m;
+
 template FloatAdd(k, p) {
-    signal input e[2];
-    signal input m[2];
+    signal input e[2]; // k-bit exponents
+    signal input m[2]; // p+1 bit mantissas with scale p
     signal output e_out;
     signal output m_out;
 
-    // TODO
+    component cwf = CheckWellFormedness(k,p);
+    cwf.e <== e[0];
+    cwf.m <== m[0];
+    component cwf2 = CheckWellFormedness(k,p);
+    cwf2.e <== e[1];
+    cwf2.m <== m[1];
+
+    var mag1,mag2;
+    mag1 = ((e[0]) << (p+1)) + m[0];
+    mag2 = ((e[1]) << (p+1)) + m[1];
+
+    component lt = LessThan(k+p+1);
+    lt.in[0] <== mag1;
+    lt.in[1] <== mag2;
+    signal mag2Larger <== lt.out;
+    var alpha_e, alpha_m, beta_e, beta_m;
+    if (mag1 > mag2) {
+        alpha_e = e[0];
+        alpha_m = m[0];
+        beta_e = e[1];
+        beta_m = m[1];
+    } else {
+        alpha_e = e[1];
+        alpha_m = m[1];
+        beta_e = e[0];
+        beta_m = m[0];
+    }
+
+    var diff = alpha_e - beta_e;
+    if (diff > p+1 || alpha_e == 0) {
+        e_out <== alpha_e;
+        m_out <== alpha_m;
+    }
 }
+
+
+// def float_add(k, p, e_1, m_1, e_2, m_2):
+//     check_well_formedness(k, p, e_1, m_1)
+//     check_well_formedness(k, p, e_2, m_2)
+
+//     ''' Arrange numbers in the order of their magnitude.
+//         Although not the same as magnitude, comparing e_1 || m_1 against e_2 || m_2 suffices to compare magnitudes.
+//     '''
+//     mgn_1 = (e_1 << (p+1)) + m_1
+//     mgn_2 = (e_2 << (p+1)) + m_2
+//     ''' comparison over k+p+1 bits '''
+//     if mgn_1 > mgn_2:
+//         (alpha_e, alpha_m) = (e_1, m_1)
+//         (beta_e, beta_m) = (e_2, m_2)
+//     else:
+//         (alpha_e, alpha_m) = (e_2, m_2)
+//         (beta_e, beta_m) = (e_1, m_1)
+
+//     diff = alpha_e - beta_e
+//     if diff > p + 1 or alpha_e == 0:
+//         return (alpha_e, alpha_m)
+//     else:
+//         alpha_m <<= diff
+//         ''' m fits in 2*p+2 bits '''
+//         m = alpha_m + beta_m
+//         e = beta_e
+//         (normalized_e, normalized_m) = normalize(k, p, 2*p+1, e, m)
+//         (e_out, m_out) = round_nearest_and_check(k, p, 2*p+1, normalized_e, normalized_m)
+
+//         return (e_out, m_out)
